@@ -25,7 +25,7 @@ keywords:
   - evapotranspiration
   - hydrology
   - R
-# doi: "10.5281/zenodo.0000000"
+doi: "10.5281/zenodo.22901009"
 references:
   - type: conference-paper
     title: "The relationship of drought frequency and duration to time scales"
