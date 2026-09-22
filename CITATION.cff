@@ -1,0 +1,57 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "climate-indices: R tools for computing climate indices from station data"
+abstract: >-
+  Reproducible R tools for computing climate indices from spreadsheet station
+  data. Computes Thornthwaite potential evapotranspiration, the monthly
+  climatic water balance, and the Standardized Precipitation
+  Evapotranspiration Index (SPEI) at multiple accumulation scales.
+type: software
+authors:
+  - family-names: "Niazkar"
+    given-names: "Majid"
+    orcid: "https://orcid.org/0000-0002-5022-1026"
+    affiliation: "<Junior Scientist at Risk Assessment and Adaptation Strategies (RAAS) Department, Euro-Mediterranean Center on Climate Change, Venezia, Italy and Adjunct Professor at Department of Environmental Sciences, Computer Science, and Statistics, Ca’ Foscari University of Venice, Venice, Italy>"
+version: 1.0.0
+date-released: "2026-09-22"
+license: MIT
+repository-code: "https://github.com/majidniazkar/climate-indices"
+keywords:
+  - climate indices
+  - drought
+  - SPEI
+  - evapotranspiration
+  - hydrology
+  - R
+# doi: "10.5281/zenodo.0000000"
+references:
+  - type: article
+    title: >-
+      A multiscalar drought index sensitive to global warming: the Standardized
+      Precipitation Evapotranspiration Index
+    authors:
+      - family-names: Vicente-Serrano
+        given-names: "Sergio M."
+      - family-names: "Begueria"
+        given-names: "Santiago"
+      - family-names: "Lopez-Moreno"
+        given-names: "Juan I."
+    journal: "Journal of Climate"
+    volume: 23
+    issue: 7
+    start: 1696
+    end: 1718
+    year: 2010
+    doi: "10.1175/2009JCLI2909.1"
+  - type: article
+    title: "An approach toward a rational classification of climate"
+    authors:
+      - family-names: Thornthwaite
+        given-names: "C. W."
+    journal: "Geographical Review"
+    volume: 38
+    issue: 1
+    start: 55
+    end: 94
+    year: 1948
+    doi: "10.2307/210739"
