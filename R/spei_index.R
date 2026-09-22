@@ -2,12 +2,10 @@
 # climate-indices | Standardized Precipitation Evapotranspiration Index
 #
 # Vicente-Serrano, Begueria & Lopez-Moreno (2010), J. Climate 23, 1696-1718.
+#
+# The wet/dry classification and the category summary are shared with SPI and
+# live in classify.R.
 # ---------------------------------------------------------------------------
-
-#' McKee et al. (1993) wet/dry classes, as conventionally applied to SPEI.
-SPEI_BREAKS <- c(-Inf, -2, -1.5, -1, 1, 1.5, 2, Inf)
-SPEI_LABELS <- c("Extremely dry", "Severely dry", "Moderately dry",
-                 "Near normal", "Moderately wet", "Very wet", "Extremely wet")
 
 #' Compute SPEI at several accumulation scales.
 #'
@@ -40,32 +38,4 @@ compute_spei <- function(balance_ts, scales = c(1, 3, 6, 9, 12, 24),
     values[[paste0("SPEI_", s)]] <- as.numeric(res$fitted)
   }
   list(values = values, skipped = skipped)
-}
-
-#' Label SPEI values with their drought/wetness class.
-classify_spei <- function(x) {
-  cut(x, breaks = SPEI_BREAKS, labels = SPEI_LABELS, right = FALSE)
-}
-
-#' Count months per class for every computed scale.
-#'
-#' @return long data.frame: Scale, Category, N_Months, Percent_Of_Valid
-summarise_categories <- function(spei_values) {
-  rows <- list()
-  for (nm in names(spei_values)) {
-    v <- spei_values[[nm]]
-    cls <- classify_spei(v)
-    n_valid <- sum(!is.na(v))
-    tab <- table(factor(cls, levels = SPEI_LABELS))
-    rows[[nm]] <- data.frame(
-      Scale            = as.integer(sub("^SPEI_", "", nm)),
-      Category         = names(tab),
-      N_Months         = as.integer(tab),
-      Percent_Of_Valid = if (n_valid > 0) round(100 * as.integer(tab) / n_valid, 2) else NA_real_,
-      stringsAsFactors = FALSE
-    )
-  }
-  out <- do.call(rbind, rows)
-  rownames(out) <- NULL
-  out
 }

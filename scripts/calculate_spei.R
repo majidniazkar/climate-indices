@@ -39,7 +39,7 @@ find_repo_root <- function() {
              "or set the CLIMATE_INDICES_ROOT environment variable."), call. = FALSE)
 }
 ROOT <- find_repo_root()
-for (f in c("climate_io.R", "monthly.R", "pet.R", "spei_index.R")) {
+for (f in c("climate_io.R", "monthly.R", "classify.R", "pet.R", "spei_index.R")) {
   source(file.path(ROOT, "R", f))
 }
 
@@ -194,7 +194,7 @@ metadata <- data.frame(
             "fit_method", "pet_method", "reference_period", "n_months",
             "record_start", "record_end", "r_version", "SPEI_package_version"),
   Value = c(format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"),
-            normalizePath(opt$input, mustWork = FALSE),
+            normalizePath(opt$input, winslash = "/", mustWork = FALSE),
             freq, sprintf("%.4f", opt$latitude), sprintf("%.2f", opt$min_coverage),
             paste(scales, collapse = ","),
             paste(sub("^SPEI_", "", spei_names), collapse = ","),
@@ -206,16 +206,18 @@ metadata <- data.frame(
   stringsAsFactors = FALSE
 )
 
-paths <- write_results(monthly, categories, metadata,
-                       output_dir = opt$output_dir, basename = opt$prefix,
-                       write_csv = !isTRUE(opt$no_csv))
+paths <- write_results(
+  sheets = list(Monthly_SPEI = monthly, Category_Summary = categories, Metadata = metadata),
+  output_dir = opt$output_dir, basename = opt$prefix,
+  csv_sheets = if (isTRUE(opt$no_csv)) character(0) else "Monthly_SPEI")
 for (p in paths) say("Written  : ", p)
 
 if (isTRUE(opt$plot)) {
   suppressPackageStartupMessages(library(ggplot2))
-  source(file.path(ROOT, "R", "plot_spei.R"))
-  fig <- plot_spei_panels(monthly, spei_names,
-                          file.path(opt$output_dir, paste0(opt$prefix, ".png")))
+  source(file.path(ROOT, "R", "plot_index.R"))
+  fig <- plot_index_panels(monthly, spei_names,
+                           file.path(opt$output_dir, paste0(opt$prefix, ".png")),
+                           ylab = "SPEI (standard deviations)")
   say("Written  : ", fig)
 }
 

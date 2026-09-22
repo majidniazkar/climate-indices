@@ -35,3 +35,29 @@ coverage rule:
 
 Running the tool on this file reports one month without usable temperature and
 two without usable precipitation.
+
+## `synthetic_daily_precipitation.xlsx`
+
+Three worksheets, one per notional station, each 10,958 daily rows from
+1991-01-01 to 2020-12-31 with only the two columns SPI needs:
+
+| Column | Unit | Description |
+|---|---|---|
+| `Date` | date | one row per day, no gaps |
+| `Precipitation` | mm | daily precipitation total |
+
+| Worksheet | Median annual total | Regime | Zero months |
+|---|---|---|---|
+| `Lowland` | 794 mm | temperate, summer-wet | 0 |
+| `Upland` | 1233 mm | wetter, same seasonality | 0 |
+| `Southslope` | 296 mm | semi-arid, winter-wet | 34 |
+
+Generated from a rainfall occurrence and intensity model with a seasonal
+cycle. Multi-month dry spells were imposed in 2003 and 2015-16 at all three
+stations, so the resulting SPI series contain recognisable droughts; 2003 is
+the driest year everywhere.
+
+`Southslope` exists to exercise the zero-inflation correction: its 34 months
+with no rain at all would otherwise return SPI = -Inf. Running with
+`--sheet all` reports the correction being applied to its dry-season calendar
+months, and leaves the other two stations untouched.

@@ -63,6 +63,34 @@ jobs:
           }
           cat("End-to-end output verified.\n")
 
+      - name: End-to-end SPI run over every worksheet
+        run: |
+          Rscript scripts/calculate_spi.R \
+            --input data/example/synthetic_daily_precipitation.xlsx \
+            --sheet all --plot --output-dir ci-output-spi
+
+      - name: Verify the SPI output
+        shell: Rscript {0}
+        run: |
+          stations <- c("Lowland", "Upland", "Southslope")
+          stopifnot(file.exists("ci-output-spi/monthly_spi.xlsx"))
+          for (st in stations) {
+            f <- sprintf("ci-output-spi/monthly_spi_%s.csv", st)
+            stopifnot(file.exists(f))
+            res <- read.csv(f)
+            stopifnot(nrow(res) == 360L)
+            for (nm in grep("^SPI_", names(res), value = TRUE)) {
+              v <- res[[nm]][!is.na(res[[nm]])]
+              # No -Inf may survive into the output, and the index is standardised.
+              stopifnot(all(is.finite(v)), abs(mean(v)) < 0.2, abs(sd(v) - 1) < 0.2)
+            }
+          }
+          # The semi-arid station has zero months; they must still be finite.
+          ss <- read.csv("ci-output-spi/monthly_spi_Southslope.csv")
+          zero_months <- which(ss$Precipitation == 0)
+          stopifnot(length(zero_months) > 0L, all(is.finite(ss$SPI_1[zero_months])))
+          cat("SPI output verified.\n")
+
       - name: Gapped input is handled, not fatal
         run: |
           Rscript scripts/calculate_spei.R \
@@ -72,4 +100,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: example-output
-          path: ci-output/
+          path: |
+            ci-output/
+            ci-output-spi/

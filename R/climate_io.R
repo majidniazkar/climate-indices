@@ -21,24 +21,27 @@ normalise_name <- function(x) {
   gsub("[^a-z0-9]", "", tolower(x))
 }
 
-#' Map the workbook's column names onto Date / Temperature / Precipitation.
+#' Map the workbook's column names onto the canonical field names.
 #'
-#' @param found character vector of column names as read from the file
+#' @param found  character vector of column names as read from the file
+#' @param fields canonical fields this caller needs. SPEI needs all three;
+#'               SPI needs only Date and Precipitation.
 #' @return named character vector: value = original column name,
 #'         name  = canonical field name
-resolve_columns <- function(found) {
+resolve_columns <- function(found, fields = REQUIRED_FIELDS) {
   key <- normalise_name(found)
   mapping <- character(0)
-  for (field in REQUIRED_FIELDS) {
+  for (field in fields) {
     hit <- which(key %in% COLUMN_SYNONYMS[[field]])
     if (length(hit) == 0L) {
       stop(sprintf(
         paste0("Could not find a '%s' column in the input file.\n",
-               "  Columns found : %s\n",
-               "  Accepted names: %s\n",
-               "  Expected layout: column 1 = Date, 2 = Temperature, 3 = Precipitation."),
+               "  Columns found  : %s\n",
+               "  Accepted names : %s\n",
+               "  Columns needed : %s"),
         field, paste(found, collapse = ", "),
-        paste(COLUMN_SYNONYMS[[field]], collapse = ", ")), call. = FALSE)
+        paste(COLUMN_SYNONYMS[[field]], collapse = ", "),
+        paste(fields, collapse = ", ")), call. = FALSE)
     }
     if (length(hit) > 1L) {
       stop(sprintf("Ambiguous input: %d columns could be the '%s' field (%s).",
@@ -77,12 +80,23 @@ as_date_column <- function(x) {
     x[which(is.na(parsed))[1]], paste(formats, collapse = ", ")), call. = FALSE)
 }
 
+#' Names of the worksheets in a workbook, in file order.
+list_sheets <- function(path) {
+  if (!file.exists(path)) {
+    stop(sprintf("Input file not found: %s", normalizePath(path, mustWork = FALSE)),
+         call. = FALSE)
+  }
+  readxl::excel_sheets(path)
+}
+
 #' Read and validate a climate workbook.
 #'
 #' @param path   path to an .xlsx / .xls file
 #' @param sheet  sheet name or 1-based index
-#' @return tibble with columns Date, Temperature, Precipitation, sorted by Date
-read_climate_excel <- function(path, sheet = 1) {
+#' @param fields canonical fields the caller needs; columns outside this set
+#'               are ignored, so a SPI run accepts a two-column sheet
+#' @return data.frame with the requested columns, sorted by Date
+read_climate_excel <- function(path, sheet = 1, fields = REQUIRED_FIELDS) {
   if (!file.exists(path)) {
     stop(sprintf("Input file not found: %s", normalizePath(path, mustWork = FALSE)),
          call. = FALSE)
@@ -91,14 +105,14 @@ read_climate_excel <- function(path, sheet = 1) {
   if (nrow(raw) == 0L) stop("The input sheet contains no data rows.", call. = FALSE)
 
   names(raw) <- trimws(names(raw))
-  mapping <- resolve_columns(names(raw))
+  if (!"Date" %in% fields) fields <- c("Date", fields)
+  mapping <- resolve_columns(names(raw), fields)
 
-  out <- data.frame(
-    Date          = as_date_column(raw[[mapping[["Date"]]]]),
-    Temperature   = suppressWarnings(as.numeric(unlist(raw[[mapping[["Temperature"]]]]))),
-    Precipitation = suppressWarnings(as.numeric(unlist(raw[[mapping[["Precipitation"]]]]))),
-    stringsAsFactors = FALSE
-  )
+  out <- data.frame(Date = as_date_column(raw[[mapping[["Date"]]]]),
+                    stringsAsFactors = FALSE)
+  for (field in setdiff(fields, "Date")) {
+    out[[field]] <- suppressWarnings(as.numeric(unlist(raw[[mapping[[field]]]])))
+  }
 
   if (any(is.na(out$Date))) {
     stop(sprintf("%d row(s) have a missing or unreadable Date and cannot be placed in time.",
@@ -117,14 +131,22 @@ read_climate_excel <- function(path, sheet = 1) {
   out
 }
 
-#' Physical plausibility checks. Hard errors for impossible values,
-#' warnings where the data is merely suspicious (e.g. wrong unit).
+#' Physical plausibility checks, applied to whichever columns are present.
+#' Hard errors for impossible values, warnings where the data is merely
+#' suspicious (e.g. the wrong unit).
 validate_ranges <- function(df) {
-  p <- df$Precipitation[!is.na(df$Precipitation)]
-  if (length(p) > 0L && any(p < 0)) {
-    stop(sprintf("Precipitation contains %d negative value(s); check the input file.",
-                 sum(p < 0)), call. = FALSE)
+  if ("Precipitation" %in% names(df)) {
+    p <- df$Precipitation[!is.na(df$Precipitation)]
+    if (length(p) == 0L) {
+      stop("The Precipitation column is entirely missing.", call. = FALSE)
+    }
+    if (any(p < 0)) {
+      stop(sprintf("Precipitation contains %d negative value(s); check the input file.",
+                   sum(p < 0)), call. = FALSE)
+    }
   }
+  if (!"Temperature" %in% names(df)) return(invisible(TRUE))
+
   t <- df$Temperature[!is.na(df$Temperature)]
   if (length(t) == 0L) stop("The Temperature column is entirely missing.", call. = FALSE)
 
@@ -134,9 +156,6 @@ validate_ranges <- function(df) {
   } else if (stats::median(t) > 45) {
     warning("Temperature values look like degrees Fahrenheit. Thornthwaite PET expects degrees Celsius.",
             call. = FALSE)
-  }
-  if (all(is.na(df$Precipitation))) {
-    stop("The Precipitation column is entirely missing.", call. = FALSE)
   }
   invisible(TRUE)
 }
@@ -157,19 +176,29 @@ detect_frequency <- function(dates) {
     step), call. = FALSE)
 }
 
-#' Write the result workbook (and optionally a CSV of the same table).
-write_results <- function(monthly, categories, metadata, output_dir, basename, write_csv = TRUE) {
+#' Write a result workbook, and optionally a CSV per data sheet.
+#'
+#' @param sheets     named list of data frames, one entry per worksheet, in the
+#'                   order they should appear
+#' @param csv_sheets names of the entries in `sheets` that should also be
+#'                   written as CSV; character(0) writes none
+write_results <- function(sheets, output_dir, basename, csv_sheets = character(0)) {
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+  # Excel limits a worksheet name to 31 characters.
+  names(sheets) <- substr(names(sheets), 1, 31)
+  if (anyDuplicated(names(sheets))) {
+    stop("Worksheet names collide after truncation to 31 characters: ",
+         paste(names(sheets)[duplicated(names(sheets))], collapse = ", "), call. = FALSE)
+  }
   xlsx_path <- file.path(output_dir, paste0(basename, ".xlsx"))
-  writexl::write_xlsx(
-    list(Monthly_SPEI = monthly, Category_Summary = categories, Metadata = metadata),
-    path = xlsx_path
-  )
-  paths <- c(xlsx = xlsx_path)
-  if (isTRUE(write_csv)) {
-    csv_path <- file.path(output_dir, paste0(basename, ".csv"))
-    utils::write.csv(monthly, csv_path, row.names = FALSE, na = "")
-    paths["csv"] <- csv_path
+  writexl::write_xlsx(sheets, path = xlsx_path)
+  paths <- c(xlsx_path)
+
+  for (nm in intersect(csv_sheets, names(sheets))) {
+    suffix <- if (length(csv_sheets) > 1L) paste0("_", gsub("[^A-Za-z0-9._-]", "_", nm)) else ""
+    csv_path <- file.path(output_dir, paste0(basename, suffix, ".csv"))
+    utils::write.csv(sheets[[nm]], csv_path, row.names = FALSE, na = "")
+    paths <- c(paths, csv_path)
   }
   paths
 }

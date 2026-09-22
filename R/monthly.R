@@ -30,6 +30,7 @@ aggregate_to_monthly <- function(daily, min_coverage = 0.9) {
   if (min_coverage < 0 || min_coverage > 1) {
     stop("min_coverage must be between 0 and 1.", call. = FALSE)
   }
+  has_temperature <- "Temperature" %in% names(daily)
   d <- daily
   d$MonthStart <- as.Date(format(d$Date, "%Y-%m-01"))
 
@@ -37,31 +38,43 @@ aggregate_to_monthly <- function(daily, min_coverage = 0.9) {
   # evaluates its arguments in order and later ones see earlier results, so
   # naming an output `Temperature` would make a subsequent
   # `sum(!is.na(Temperature))` count the monthly mean rather than the days.
-  agg <- dplyr::summarise(
-    dplyr::group_by(d, MonthStart),
-    n_days_t = sum(!is.na(Temperature)),
-    n_days_p = sum(!is.na(Precipitation)),
-    t_mean   = mean(Temperature, na.rm = TRUE),
-    p_sum    = sum(Precipitation, na.rm = TRUE),
-    .groups  = "drop"
-  )
-  names(agg) <- c("MonthStart", "N_Days_Temperature", "N_Days_Precipitation",
-                  "Temperature", "Precipitation")
-  # An all-NA month yields mean = NaN; normalise to NA before the coverage rule.
-  agg$Temperature[is.nan(agg$Temperature)] <- NA_real_
+  if (has_temperature) {
+    agg <- dplyr::summarise(
+      dplyr::group_by(d, MonthStart),
+      n_days_t = sum(!is.na(Temperature)),
+      n_days_p = sum(!is.na(Precipitation)),
+      t_mean   = mean(Temperature, na.rm = TRUE),
+      p_sum    = sum(Precipitation, na.rm = TRUE),
+      .groups  = "drop"
+    )
+    names(agg) <- c("MonthStart", "N_Days_Temperature", "N_Days_Precipitation",
+                    "Temperature", "Precipitation")
+    # An all-NA month yields mean = NaN; normalise before the coverage rule.
+    agg$Temperature[is.nan(agg$Temperature)] <- NA_real_
+  } else {
+    agg <- dplyr::summarise(
+      dplyr::group_by(d, MonthStart),
+      n_days_p = sum(!is.na(Precipitation)),
+      p_sum    = sum(Precipitation, na.rm = TRUE),
+      .groups  = "drop"
+    )
+    names(agg) <- c("MonthStart", "N_Days_Precipitation", "Precipitation")
+  }
 
   # Continuous calendar grid, first to last observed month.
   grid <- data.frame(
     MonthStart = seq(min(agg$MonthStart), max(agg$MonthStart), by = "1 month")
   )
   out <- dplyr::left_join(grid, agg, by = "MonthStart")
-  out$N_Days_Temperature[is.na(out$N_Days_Temperature)] <- 0L
   out$N_Days_Precipitation[is.na(out$N_Days_Precipitation)] <- 0L
 
   # Coverage rule.
   required <- ceiling(min_coverage * days_in_month_of(out$MonthStart))
-  out$Temperature[out$N_Days_Temperature   < required] <- NA_real_
   out$Precipitation[out$N_Days_Precipitation < required] <- NA_real_
+  if (has_temperature) {
+    out$N_Days_Temperature[is.na(out$N_Days_Temperature)] <- 0L
+    out$Temperature[out$N_Days_Temperature < required] <- NA_real_
+  }
 
   out$Date  <- out$MonthStart
   out$Year  <- as.integer(format(out$Date, "%Y"))
@@ -69,25 +82,33 @@ aggregate_to_monthly <- function(daily, min_coverage = 0.9) {
   out$Days_In_Month <- days_in_month_of(out$Date)
   out$MonthStart <- NULL
 
-  out[, c("Date", "Year", "Month", "Days_In_Month",
-          "N_Days_Temperature", "N_Days_Precipitation",
-          "Temperature", "Precipitation")]
+  keep <- c("Date", "Year", "Month", "Days_In_Month")
+  if (has_temperature) keep <- c(keep, "N_Days_Temperature")
+  keep <- c(keep, "N_Days_Precipitation")
+  if (has_temperature) keep <- c(keep, "Temperature")
+  out[, c(keep, "Precipitation")]
 }
 
 #' Put an already-monthly input on the same continuous grid.
 standardise_monthly <- function(monthly) {
+  has_temperature <- "Temperature" %in% names(monthly)
+  vars <- if (has_temperature) c("Temperature", "Precipitation") else "Precipitation"
   m <- monthly
   m$Date <- as.Date(format(m$Date, "%Y-%m-01"))
   grid <- data.frame(Date = seq(min(m$Date), max(m$Date), by = "1 month"))
-  out <- dplyr::left_join(grid, m[, c("Date", "Temperature", "Precipitation")], by = "Date")
+  out <- dplyr::left_join(grid, m[, c("Date", vars)], by = "Date")
   out$Year  <- as.integer(format(out$Date, "%Y"))
   out$Month <- as.integer(format(out$Date, "%m"))
   out$Days_In_Month <- days_in_month_of(out$Date)
-  out$N_Days_Temperature   <- NA_integer_
   out$N_Days_Precipitation <- NA_integer_
-  out[, c("Date", "Year", "Month", "Days_In_Month",
-          "N_Days_Temperature", "N_Days_Precipitation",
-          "Temperature", "Precipitation")]
+  keep <- c("Date", "Year", "Month", "Days_In_Month")
+  if (has_temperature) {
+    out$N_Days_Temperature <- NA_integer_
+    keep <- c(keep, "N_Days_Temperature")
+  }
+  keep <- c(keep, "N_Days_Precipitation")
+  if (has_temperature) keep <- c(keep, "Temperature")
+  out[, c(keep, "Precipitation")]
 }
 
 #' Wrap a monthly column as a ts anchored on its true calendar start.
