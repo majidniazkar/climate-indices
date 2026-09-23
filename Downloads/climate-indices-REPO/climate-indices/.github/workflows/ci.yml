@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "release"
+          use-public-rspm: true
+
+      - name: Install R packages
+        shell: Rscript {0}
+        run: |
+          install.packages(c("readxl", "writexl", "SPEI", "optparse", "ggplot2"))
+
+      - name: Report versions
+        shell: Rscript {0}
+        run: |
+          cat(R.version.string, "\n")
+          for (p in c("readxl", "writexl", "SPEI", "optparse", "ggplot2")) {
+            cat(sprintf("  %-10s %s\n", p, as.character(packageVersion(p))))
+          }
+
+      - name: Unit tests
+        run: Rscript tests/run_tests.R
+
+      - name: End-to-end run on the example dataset
+        run: |
+          Rscript scripts/calculate_spei.R \
+            --input data/example/synthetic_daily_climate.xlsx \
+            --latitude 48.891 --plot --output-dir ci-output
+
+      - name: Verify the end-to-end output
+        shell: Rscript {0}
+        run: |
+          expected <- file.path("ci-output",
+                                paste0("monthly_pet_spei", c(".xlsx", ".csv", ".png")))
+          absent <- expected[!file.exists(expected)]
+          if (length(absent) > 0L) stop("missing output: ", paste(absent, collapse = ", "))
+
+          res <- read.csv("ci-output/monthly_pet_spei.csv")
+          stopifnot(nrow(res) == 360L)
+          stopifnot(all(c("PET", "Balance", "SPEI_1", "SPEI_12", "SPEI_24") %in% names(res)))
+          stopifnot(all(res$PET >= 0))
+
+          # SPEI is standardised by construction; a broken pipeline shows up here.
+          for (nm in grep("^SPEI_", names(res), value = TRUE)) {
+            v <- res[[nm]][is.finite(res[[nm]])]
+            stopifnot(abs(mean(v)) < 0.15, abs(sd(v) - 1) < 0.15)
+          }
+          cat("End-to-end output verified.\n")
+
+      - name: End-to-end SPI run over every worksheet
+        run: |
+          Rscript scripts/calculate_spi.R \
+            --input data/example/synthetic_daily_precipitation.xlsx \
+            --sheet all --plot --output-dir ci-output-spi
+
+      - name: Verify the SPI output
+        shell: Rscript {0}
+        run: |
+          stations <- c("Lowland", "Upland", "Southslope")
+          stopifnot(file.exists("ci-output-spi/monthly_spi.xlsx"))
+          for (st in stations) {
+            f <- sprintf("ci-output-spi/monthly_spi_%s.csv", st)
+            stopifnot(file.exists(f))
+            res <- read.csv(f)
+            stopifnot(nrow(res) == 360L)
+            for (nm in grep("^SPI_", names(res), value = TRUE)) {
+              v <- res[[nm]][!is.na(res[[nm]])]
+              # No -Inf may survive into the output, and the index is standardised.
+              stopifnot(all(is.finite(v)), abs(mean(v)) < 0.2, abs(sd(v) - 1) < 0.2)
+            }
+          }
+          # The semi-arid station has zero months; they must still be finite.
+          ss <- read.csv("ci-output-spi/monthly_spi_Southslope.csv")
+          zero_months <- which(ss$Precipitation == 0)
+          stopifnot(length(zero_months) > 0L, all(is.finite(ss$SPI_1[zero_months])))
+          cat("SPI output verified.\n")
+
+      - name: End-to-end SDI run over every gauge
+        run: |
+          Rscript scripts/calculate_sdi.R \
+            --input data/example/synthetic_daily_discharge.xlsx \
+            --sheet all --plot --output-dir ci-output-sdi
+
+      - name: Verify the SDI output
+        shell: Rscript {0}
+        run: |
+          gauges <- c("Gauge_Upper", "Gauge_Lower", "Gauge_Karst")
+          stopifnot(file.exists("ci-output-sdi/monthly_sdi.xlsx"))
+          for (g in gauges) {
+            f <- sprintf("ci-output-sdi/monthly_sdi_%s.csv", g)
+            stopifnot(file.exists(f))
+            res <- read.csv(f)
+            stopifnot(nrow(res) == 360L, all(res$Discharge >= 0, na.rm = TRUE))
+            for (nm in grep("^SDI_", names(res), value = TRUE)) {
+              v <- res[[nm]][!is.na(res[[nm]])]
+              stopifnot(all(is.finite(v)), abs(mean(v)) < 0.2, abs(sd(v) - 1) < 0.2)
+            }
+          }
+          # The intermittent gauge has zero-flow months; they must stay finite.
+          k <- read.csv("ci-output-sdi/monthly_sdi_Gauge_Karst.csv")
+          dry <- which(k$Discharge == 0)
+          stopifnot(length(dry) > 0L, all(is.finite(k$SDI_1[dry])))
+          cat("SDI output verified.\n")
+
+      - name: Gapped input is handled, not fatal
+        run: |
+          Rscript scripts/calculate_spei.R \
+            --input data/example/synthetic_daily_climate_with_gaps.xlsx \
+            --latitude 48.891 --output-dir ci-output-gaps --no-csv
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: example-output
+          path: |
+            ci-output/
+            ci-output-spi/
+            ci-output-sdi/
