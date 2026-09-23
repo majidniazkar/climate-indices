@@ -27,7 +27,7 @@ keywords:
   - evapotranspiration
   - hydrology
   - R
-# doi: "10.5281/zenodo.0000000"
+doi: "10.5281/zenodo.22925478"
 references:
   - type: article
     title: "Assessment of hydrological drought revisited"
