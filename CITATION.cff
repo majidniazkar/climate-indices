@@ -30,7 +30,7 @@ keywords:
   - evapotranspiration
   - hydrology
   - R
-# doi: "10.5281/zenodo.0000000"
+doi: "10.5281/zenodo.22958893"
 references:
   - type: article
     title: "Regional drought assessment based on the Reconnaissance Drought Index (RDI)"
