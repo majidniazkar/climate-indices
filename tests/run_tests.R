@@ -36,7 +36,7 @@ find_repo_root <- function() {
 }
 ROOT <- find_repo_root()
 for (f in c("climate_io.R", "monthly.R", "classify.R", "pet.R",
-            "spei_index.R", "spi_index.R", "sdi_index.R")) {
+            "spei_index.R", "spi_index.R", "sdi_index.R", "rdi_index.R")) {
   source(file.path(ROOT, "R", f))
 }
 
@@ -489,6 +489,133 @@ check("discharge synonyms such as Flow and Q are accepted", {
   ok2 <- nrow(read_climate_excel(write_book(d, "syn_q.xlsx"),
                                  fields = c("Date", "Discharge"))) == 60L
   ok1 && ok2
+})
+
+# --- RDI -------------------------------------------------------------------
+# Precipitation with a mild seasonal cycle against PET with a very strong one:
+# the aridity ratio alpha then has a large seasonal swing, which is the
+# property that forces the per-calendar-month fit.
+set.seed(41)
+n_rdi <- 480
+cal_r <- rep(1:12, length.out = n_rdi)
+pet_seas <- c(2, 6, 24, 50, 88, 109, 122, 105, 68, 38, 16, 5)
+p_seas   <- c(55, 50, 58, 62, 78, 92, 90, 85, 70, 62, 60, 58)
+rdi_p <- p_seas[cal_r] * exp(rnorm(n_rdi, 0, 0.45))
+rdi_e <- pet_seas[cal_r] * exp(rnorm(n_rdi, 0, 0.12))
+p_ts <- stats::ts(rdi_p, start = c(1981, 1), frequency = 12)
+e_ts <- stats::ts(rdi_e, start = c(1981, 1), frequency = 12)
+rdi_res <- compute_rdi(p_ts, e_ts, scales = c(1, 3, 12))
+
+check("RDI returns one column per scale plus the alpha ratio", {
+  identical(names(rdi_res$values), c("RDI_1", "RDI_3", "RDI_12")) &&
+    identical(names(rdi_res$alpha), c("Alpha_1", "Alpha_3", "Alpha_12")) &&
+    all(vapply(rdi_res$values, length, integer(1)) == n_rdi)
+})
+
+check("alpha is accumulated P divided by accumulated PET", {
+  a <- rdi_res$alpha$Alpha_3
+  manual <- rolling_sum(rdi_p, 3) / rolling_sum(rdi_e, 3)
+  isTRUE(all.equal(a, manual))
+})
+
+check("RDI is standardised: mean near 0 and sd near 1", {
+  v <- rdi_res$values$RDI_1[is.finite(rdi_res$values$RDI_1)]
+  abs(mean(v)) < 0.15 && abs(sd(v) - 1) < 0.15
+})
+
+check("RDI is fitted per calendar month, so the alpha seasonal cycle is removed", {
+  max(abs(tapply(rdi_res$values$RDI_1, cal_r, mean, na.rm = TRUE))) < 0.15
+})
+
+check("pooling all months instead would leave a large seasonal signal in the index", {
+  # What the user-supplied notebook computes: one mean and sd over every month.
+  a <- rdi_res$alpha$Alpha_1
+  pooled <- (log(a) - mean(log(a), na.rm = TRUE)) / sd(log(a), na.rm = TRUE)
+  seasonal_range <- diff(range(tapply(pooled, cal_r, mean, na.rm = TRUE)))
+  per_month <- diff(range(tapply(rdi_res$values$RDI_1, cal_r, mean, na.rm = TRUE)))
+  seasonal_range > 2 && per_month < 0.3
+})
+
+check("alpha is undefined, and RDI empty, where accumulated PET is zero", {
+  e0 <- rdi_e
+  e0[cal_r == 1] <- 0                      # every January frozen
+  r <- compute_rdi(p_ts, stats::ts(e0, start = c(1981, 1), frequency = 12), scales = 1)
+  all(is.na(r$alpha$Alpha_1[cal_r == 1])) &&
+    all(is.na(r$values$RDI_1[cal_r == 1])) &&
+    !all(is.na(r$values$RDI_1)) &&
+    length(r$undefined$RDI_1) == sum(cal_r == 1)
+})
+
+check("a longer window bridges the zero-PET months that break scale 1", {
+  e0 <- rdi_e
+  e0[cal_r == 1] <- 0
+  r <- compute_rdi(p_ts, stats::ts(e0, start = c(1981, 1), frequency = 12),
+                   scales = c(1, 12))
+  sum(is.na(r$values$RDI_1)) > sum(is.na(r$values$RDI_12))
+})
+
+check("zero-precipitation accumulations stay finite under the correction", {
+  p0 <- rdi_p
+  p0[seq(7, n_rdi, by = 24)] <- 0
+  r <- compute_rdi(stats::ts(p0, start = c(1981, 1), frequency = 12), e_ts, scales = 1)
+  v <- r$values$RDI_1
+  all(is.finite(v[!is.na(v)])) && !all(is.na(v[seq(7, n_rdi, by = 24)]))
+})
+
+check("the gamma variant ranks the same months as the log-normal one", {
+  g <- compute_rdi(p_ts, e_ts, scales = 3, distribution = "gamma")$values$RDI_3
+  l <- rdi_res$values$RDI_3
+  ok <- is.finite(g) & is.finite(l)
+  cor(g[ok], l[ok], method = "spearman") > 0.999
+})
+
+check("mismatched P and PET lengths are refused", {
+  inherits(try(compute_rdi(p_ts, stats::ts(rdi_e[1:100], start = c(1981, 1),
+                                           frequency = 12), scales = 1),
+               silent = TRUE), "try-error")
+})
+
+check("an unknown distribution and negative inputs are refused", {
+  bad_dist <- inherits(try(compute_rdi(p_ts, e_ts, scales = 1, distribution = "weibull"),
+                           silent = TRUE), "try-error")
+  neg <- rdi_p; neg[3] <- -1
+  bad_val <- inherits(try(compute_rdi(stats::ts(neg, start = c(1981, 1), frequency = 12),
+                                      e_ts, scales = 1), silent = TRUE), "try-error")
+  bad_dist && bad_val
+})
+
+check("a scale longer than the record is skipped, not fatal", {
+  r <- compute_rdi(stats::ts(rdi_p[1:24], start = c(1981, 1), frequency = 12),
+                   stats::ts(rdi_e[1:24], start = c(1981, 1), frequency = 12),
+                   scales = c(3, 48))
+  identical(names(r$values), "RDI_3") && identical(r$skipped, 48L)
+})
+
+# --- shared aggregation and column resolution for PET ----------------------
+check("a supplied PET column is summed to monthly totals", {
+  d <- data.frame(Date = seq(as.Date("2001-01-01"), as.Date("2003-12-31"), by = "day"))
+  d$Precipitation <- 2
+  d$PET <- 3
+  m <- aggregate_to_monthly(d)
+  isTRUE(all.equal(m$PET[1], 3 * 31)) && "N_Days_PET" %in% names(m)
+})
+
+check("PET column synonyms are recognised and negative PET rejected", {
+  d <- data.frame(date = seq(as.Date("2001-01-01"), by = "month", length.out = 48),
+                  precip = runif(48, 10, 90), ET0 = runif(48, 1, 120))
+  ok <- nrow(read_climate_excel(write_book(d, "pet_syn.xlsx"),
+                                fields = c("Date", "Precipitation", "PET"))) == 48L
+  bad <- d; bad$ET0[2] <- -5
+  ok && inherits(try(read_climate_excel(write_book(bad, "pet_neg.xlsx"),
+                                        fields = c("Date", "Precipitation", "PET")),
+                     silent = TRUE), "try-error")
+})
+
+check("available_fields reports what a worksheet can supply", {
+  d <- data.frame(date = seq(as.Date("2001-01-01"), by = "month", length.out = 24),
+                  precip = 1, pet = 1)
+  f <- available_fields(write_book(d, "avail.xlsx"))
+  setequal(f, c("Date", "Precipitation", "PET"))
 })
 
 # --- input validation ------------------------------------------------------

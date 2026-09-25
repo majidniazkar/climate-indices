@@ -117,6 +117,35 @@ jobs:
           stopifnot(length(dry) > 0L, all(is.finite(k$SDI_1[dry])))
           cat("SDI output verified.\n")
 
+      - name: End-to-end RDI run, both PET routes
+        run: |
+          Rscript scripts/calculate_rdi.R \
+            --input data/example/synthetic_monthly_precip_pet.xlsx \
+            --plot --output-dir ci-output-rdi
+          Rscript scripts/calculate_rdi.R \
+            --input data/example/synthetic_daily_climate.xlsx \
+            --latitude 48.891 --output-dir ci-output-rdi-tw
+
+      - name: Verify the RDI output and that both PET routes agree
+        shell: Rscript {0}
+        run: |
+          a <- read.csv("ci-output-rdi/monthly_rdi.csv")
+          b <- read.csv("ci-output-rdi-tw/monthly_rdi.csv")
+          stopifnot(nrow(a) == 360L, nrow(b) == 360L)
+          stopifnot(all(c("Alpha_12", "RDI_12") %in% names(a)))
+
+          # A supplied PET column and Thornthwaite from temperature must agree.
+          stopifnot(max(abs(a$RDI_12 - b$RDI_12), na.rm = TRUE) < 0.01)
+
+          for (nm in grep("^RDI_", names(a), value = TRUE)) {
+            v <- a[[nm]][!is.na(a[[nm]])]
+            stopifnot(all(is.finite(v)), abs(mean(v)) < 0.2, abs(sd(v) - 1) < 0.2)
+          }
+          # alpha must be undefined exactly where monthly PET is zero, at scale 1.
+          stopifnot(all(is.na(a$Alpha_1[a$PET == 0])))
+          stopifnot(sum(a$PET == 0) > 0)
+          cat("RDI output verified.\n")
+
       - name: Gapped input is handled, not fatal
         run: |
           Rscript scripts/calculate_spei.R \
@@ -130,3 +159,4 @@ jobs:
             ci-output/
             ci-output-spi/
             ci-output-sdi/
+            ci-output-rdi/

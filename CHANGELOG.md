@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [semantic versioning](https://semver.org/).
 
+## [1.3.0] - 2026-09-24
+
+### Added
+
+- `scripts/calculate_rdi.R`: Reconnaissance Drought Index (Tsakiris & Vangelis
+  2005; Tsakiris, Pangalou & Vangelis 2007) at any set of accumulation scales,
+  built on the aridity ratio alpha = accumulated P / accumulated PET.
+- PET is taken from the input file when a `PET` column is present and computed
+  from temperature by the Thornthwaite method otherwise, so `--latitude` is
+  required only in the second case. Both routes agree to within rounding.
+- `Alpha_<scale>` columns are written alongside the index, so the normalised
+  form RDI_n = alpha / mean(alpha) - 1 is one step away. Suppress with
+  `--no-alpha`.
+- `PET` is now a recognised input variable, summed over the month, with
+  synonyms (`ET0`, `ETo`, `ETP`, `PotentialET`) and a rejection of negative
+  values. `available_fields()` reports what a worksheet can supply.
+- Monthly example workbook `synthetic_monthly_precip_pet.xlsx` in the
+  date / precip / pet layout.
+- 15 further unit checks, including that the aridity ratio is undefined where
+  accumulated PET is zero and that a pooled fit would leave a seasonal cycle
+  in the index.
+
+### Notes
+
+- RDI at short scales has genuine gaps at cold sites: Thornthwaite PET is
+  exactly zero for any month at or below 0 degC, so alpha is undefined. On the
+  49 deg N example record this is 11 of 360 months, nine of them Januaries.
+  Those months are reported as missing and counted in the run log rather than
+  filled; longer accumulation windows bridge them.
+
 ## [1.2.0] - 2026-09-23
 
 ### Added

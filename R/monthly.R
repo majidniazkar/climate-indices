@@ -19,7 +19,8 @@
 
 MONTHLY_STATISTIC <- c(Temperature   = "mean",   # monthly mean air temperature
                        Precipitation = "sum",    # monthly total, mm
-                       Discharge     = "sum")    # monthly total of daily flows
+                       Discharge     = "sum",    # monthly total of daily flows
+                       PET           = "sum")    # monthly total, mm, if supplied
 
 #' Number of days in the calendar month containing each element of `d`.
 #'

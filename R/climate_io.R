@@ -16,7 +16,9 @@ COLUMN_SYNONYMS <- list(
   Precipitation = c("precipitation", "precip", "prec", "prcp", "pr",
                     "rainfall", "rain", "p"),
   Discharge     = c("discharge", "flow", "streamflow", "riverflow", "runoff",
-                    "q", "qobs", "abfluss", "debit")
+                    "q", "qobs", "abfluss", "debit"),
+  PET           = c("pet", "potentialevapotranspiration", "potentialet",
+                    "et0", "eto", "etp", "petmm")
 )
 
 normalise_name <- function(x) {
@@ -91,6 +93,22 @@ list_sheets <- function(path) {
   readxl::excel_sheets(path)
 }
 
+#' Which canonical fields a worksheet is able to supply.
+#'
+#' Lets a caller adapt to the file rather than demanding a fixed layout --
+#' RDI, for instance, uses a PET column when one is present and falls back to
+#' computing PET from temperature when it is not.
+available_fields <- function(path, sheet = 1) {
+  hdr <- names(readxl::read_excel(path, sheet = sheet, n_max = 0,
+                                  .name_repair = "minimal"))
+  key <- normalise_name(trimws(hdr))
+  found <- character(0)
+  for (field in names(COLUMN_SYNONYMS)) {
+    if (any(key %in% COLUMN_SYNONYMS[[field]])) found <- c(found, field)
+  }
+  found
+}
+
 #' Read and validate a climate workbook.
 #'
 #' @param path   path to an .xlsx / .xls file
@@ -145,6 +163,14 @@ validate_ranges <- function(df) {
     if (any(p < 0)) {
       stop(sprintf("Precipitation contains %d negative value(s); check the input file.",
                    sum(p < 0)), call. = FALSE)
+    }
+  }
+  if ("PET" %in% names(df)) {
+    e <- df$PET[!is.na(df$PET)]
+    if (length(e) == 0L) stop("The PET column is entirely missing.", call. = FALSE)
+    if (any(e < 0)) {
+      stop(sprintf("PET contains %d negative value(s); check the input file.",
+                   sum(e < 0)), call. = FALSE)
     }
   }
   if ("Discharge" %in% names(df)) {

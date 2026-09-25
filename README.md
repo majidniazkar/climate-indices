@@ -8,7 +8,7 @@ structure apply throughout.
 [![CI](https://github.com/majidniazkar/climate-indices/actions/workflows/ci.yml/badge.svg)](https://github.com/majidniazkar/climate-indices/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![R >= 4.1](https://img.shields.io/badge/R-%3E%3D%204.1-blue.svg)](https://www.r-project.org/)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22925478.svg)](https://doi.org/10.5281/zenodo.22925478)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.0000000.svg)](https://doi.org/10.5281/zenodo.0000000)
 
 ---
 
@@ -19,6 +19,7 @@ structure apply throughout.
 | **SPEI** — Standardized Precipitation Evapotranspiration Index | `scripts/calculate_spei.R` | Date, Temperature, Precipitation | yes (for PET) |
 | **SPI** — Standardized Precipitation Index | `scripts/calculate_spi.R` | Date, Precipitation | no |
 | **SDI** — Streamflow Drought Index | `scripts/calculate_sdi.R` | Date, Discharge | no |
+| **RDI** — Reconnaissance Drought Index | `scripts/calculate_rdi.R` | Date, Precipitation, and PET *or* Temperature | only if PET is not supplied |
 
 Both are computed at any set of accumulation scales (1, 3, 6, 9, 12 and 24
 months by default) and both aggregate daily input to monthly values first.
@@ -34,10 +35,12 @@ One worksheet, one header row, columns in any order:
 | `Temperature` | mean air temperature | **°C** | `Temperature`, `Temp`, `Tmean`, `Tavg`, `T` |
 | `Precipitation` | precipitation total | **mm** | `Precipitation`, `Precip`, `Prec`, `Rainfall`, `P` |
 | `Discharge` | daily mean discharge | **m³/s** (any consistent unit) | `Discharge`, `Flow`, `Streamflow`, `Runoff`, `Q`, `Qobs` |
+| `PET` | potential evapotranspiration | **mm** | `PET`, `ET0`, `ETo`, `ETP`, `PotentialET` |
 
 Each script asks only for the columns its index needs — SPI for `Date` and
 `Precipitation`, SDI for `Date` and `Discharge` — so a two-column sheet is
-accepted as is. Header matching ignores case, spaces, dots and underscores. Real Excel
+accepted as is. RDI needs precipitation and PET, and takes PET from the file
+if a column is there, otherwise computing it from temperature. Header matching ignores case, spaces, dots and underscores. Real Excel
 date cells are preferred; dates stored as text are parsed from the common
 formats (`YYYY-MM-DD`, `DD.MM.YYYY`, `DD/MM/YYYY`, …).
 
@@ -123,6 +126,27 @@ in thirty years while reaching +3.98 on the wet side. Use `normal` only to
 reproduce results computed that way.
 
 ![SDI at six accumulation scales for the example Gauge_Upper record](docs/example_sdi.png)
+
+## RDI
+
+```bash
+Rscript scripts/calculate_rdi.R --input precip_pet.xlsx              # PET supplied
+Rscript scripts/calculate_rdi.R --input station.xlsx --latitude 48.891   # PET computed
+```
+
+RDI standardises the aridity ratio **α = accumulated P / accumulated PET**.
+If the workbook has a `PET` column it is used directly; otherwise PET comes
+from Thornthwaite, which is the only thing `--latitude` is needed for. On the
+example station the two routes agree to within rounding. Options otherwise
+match SPI, with `--distribution` taking `log-normal` (the original RDI_st),
+`gamma` or `normal`, and `--no-alpha` suppressing the ratio columns.
+
+The output carries `Alpha_<scale>` next to each `RDI_<scale>`, so the
+normalised form *RDI_n = α / ᾱ − 1* is one step away, and α at the 12-month
+scale is directly readable as the site's aridity ratio (1.40 on the example
+record — humid, P exceeds PET).
+
+![RDI at six accumulation scales for the example station](docs/example_rdi.png)
 
 ## SPEI
 
@@ -229,6 +253,27 @@ accumulation is undefined until *n* months have been observed.
   "mild drought" band (−1 < SDI < 0) is not separated out here; it falls
   inside *near normal*.
 
+### RDI
+
+- **α is undefined where accumulated PET is zero**, and Thornthwaite returns
+  exactly zero for any month whose mean temperature is at or below 0 °C. So
+  one-month RDI has real winter gaps at cold sites: on the 49° N example
+  record, 11 of 360 months — nine of them Januaries. Those months are left
+  empty and counted in the run log rather than filled, and accumulation
+  windows of three months or more bridge them. If you need a gap-free
+  short-scale index at a cold site, SPEI is the better choice, since *P − PET*
+  stays defined when PET is zero.
+- **The per-calendar-month fit is what makes RDI an anomaly rather than a
+  calendar.** α has a very large seasonal cycle wherever there is a cold
+  season, because PET collapses towards zero in winter while precipitation
+  does not — on the example record the median α₁ runs from 6.95 in December to
+  0.89 in August. Standardising a pooled sample of all twelve months leaves
+  that cycle in the index: its monthly means then run from **+1.29 in January
+  to −0.71 in August**, a 2.05 σ swing that has nothing to do with drought.
+  Fitted per calendar month, as here, that range is 0.00.
+- **Zero-precipitation accumulations** are carried as a probability mass, as
+  in SPI and SDI, rather than dropped by the logarithm.
+
 ### SPEI
 
 - **Thornthwaite PET is temperature-only.** It needs just monthly mean
@@ -271,6 +316,7 @@ R/                     reusable modules
   spei_index.R         SPEI
   spi_index.R          SPI, including the zero-inflation correction
   sdi_index.R          SDI, with selectable distribution
+  rdi_index.R          RDI, on the aridity ratio P / PET
   plot_index.R         figures
 scripts/               command line entry points, one per index
 tests/run_tests.R      unit tests
@@ -290,10 +336,10 @@ header spellings in `R/climate_io.R`.
 Rscript tests/run_tests.R
 ```
 
-69 checks covering aggregation, calendar alignment, the coverage rule, PET,
-the standardisation of all three indices, the per-calendar-month fit, the
-zero-flow treatment, the distribution variants, the drought classification and
-input validation.
+84 checks covering aggregation, calendar alignment, the coverage rule, PET,
+the standardisation of all four indices, the per-calendar-month fit, the
+zero-flow and zero-precipitation treatments, the distribution variants, the
+undefined-α case, the drought classification and input validation.
 The same suite plus end-to-end runs on the example datasets executes in CI on
 every push.
 
@@ -312,6 +358,9 @@ If this code contributes to a publication, please cite the repository (see
 [`CITATION.cff`](CITATION.cff) or the *Cite this repository* button on GitHub)
 **and** the underlying methods:
 
+- Tsakiris, G., Pangalou, D. & Vangelis, H. (2007). Regional drought
+  assessment based on the Reconnaissance Drought Index (RDI). *Water Resources
+  Management*, 21(5), 821–833. <https://doi.org/10.1007/s11269-006-9105-4> — RDI
 - Nalbantis, I. & Tsakiris, G. (2009). Assessment of hydrological drought
   revisited. *Water Resources Management*, 23(5), 881–897.
   <https://doi.org/10.1007/s11269-008-9305-1> — SDI

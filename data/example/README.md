@@ -87,3 +87,26 @@ anomaly inherits that skew, while the log-normal and gamma variants do not.
 Multi-month low-flow periods were imposed in 2003 and 2015-16 at all three
 gauges. `Gauge_Karst` exists to exercise the zero-flow treatment; without it
 its dry-season months would return an undefined index.
+
+## `synthetic_monthly_precip_pet.xlsx`
+
+One worksheet, 360 monthly rows (1991-01 to 2020-12), in the layout RDI
+expects when PET has already been computed elsewhere:
+
+| Column | Unit | Description |
+|---|---|---|
+| `date` | date | first of each month |
+| `precip` | mm | monthly precipitation total |
+| `pet` | mm | monthly potential evapotranspiration total |
+
+Derived from `synthetic_daily_climate.xlsx`: precipitation aggregated to
+monthly totals, and PET computed by the Thornthwaite method at latitude
+48.891. Running `calculate_rdi.R` on this file and on the daily climate file
+with `--latitude 48.891` gives the same answer to within rounding, which is
+what makes it a useful check of the two PET routes.
+
+Eleven of the 360 months have **PET exactly zero** — nine Januaries, one
+February and one December, all with a mean temperature at or below 0 degC.
+The aridity ratio is undefined for those months, so one-month RDI is empty
+there. This is a property of the Thornthwaite method at cold sites, not a
+defect, and the run log reports the count.

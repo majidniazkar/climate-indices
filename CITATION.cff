@@ -1,4 +1,4 @@
-cff-version: 1.2.0
+cff-version: 1.3.0
 message: "If you use this software, please cite it as below."
 title: "climate-indices: R tools for computing climate indices from station data"
 abstract: >-
@@ -6,15 +6,16 @@ abstract: >-
   data. Computes the Standardized Precipitation Index (SPI), the Standardized
   Precipitation Evapotranspiration Index (SPEI) with Thornthwaite potential
   evapotranspiration and the monthly climatic water balance, and the
-  Streamflow Drought Index (SDI), each at multiple accumulation scales.
+  Streamflow Drought Index (SDI) and the Reconnaissance Drought Index (RDI),
+  each at multiple accumulation scales.
 type: software
 authors:
   - family-names: "Niazkar"
     given-names: "Majid"
     orcid: "https://orcid.org/0000-0002-5022-1026"
     affiliation: "<Junior Scientist at Risk Assessment and Adaptation Strategies (RAAS) Department, Euro-Mediterranean Center on Climate Change, Venezia, Italy and Adjunct Professor at Department of Environmental Sciences, Computer Science, and Statistics, Ca’ Foscari University of Venice, Venice, Italy>"
-version: 1.2.0
-date-released: "2026-09-23"
+version: 1.3.0
+date-released: "2026-09-24"
 license: MIT
 repository-code: "https://github.com/majidniazkar/climate-indices"
 keywords:
@@ -23,12 +24,30 @@ keywords:
   - SPI
   - SPEI
   - SDI
+  - RDI
   - streamflow
+  - aridity
   - evapotranspiration
   - hydrology
   - R
-doi: "10.5281/zenodo.22925478"
+# doi: "10.5281/zenodo.0000000"
 references:
+  - type: article
+    title: "Regional drought assessment based on the Reconnaissance Drought Index (RDI)"
+    authors:
+      - family-names: Tsakiris
+        given-names: George
+      - family-names: Pangalou
+        given-names: Dimitris
+      - family-names: Vangelis
+        given-names: Harris
+    journal: "Water Resources Management"
+    volume: 21
+    issue: 5
+    start: 821
+    end: 833
+    year: 2007
+    doi: "10.1007/s11269-006-9105-4"
   - type: article
     title: "Assessment of hydrological drought revisited"
     authors:
