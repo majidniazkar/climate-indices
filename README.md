@@ -8,7 +8,7 @@ structure apply throughout.
 [![CI](https://github.com/majidniazkar/climate-indices/actions/workflows/ci.yml/badge.svg)](https://github.com/majidniazkar/climate-indices/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![R >= 4.1](https://img.shields.io/badge/R-%3E%3D%204.1-blue.svg)](https://www.r-project.org/)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.0000000.svg)](https://doi.org/10.5281/zenodo.0000000)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22958893.svg)](https://doi.org/10.5281/zenodo.22958893)
 
 ---
 
